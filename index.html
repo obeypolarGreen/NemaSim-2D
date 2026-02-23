@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NemaSim-2D v2.1 — C. elegans Lifecycle Simulation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;500;700&display=swap');
+
+  :root {
+    --bg: #030a06;
+    --panel: #060f08;
+    --border: #0f3318;
+    --green: #00ff6a;
+    --green-dim: #00a844;
+    --green-glow: #00ff6a44;
+    --amber: #ffb800;
+    --red: #ff3a3a;
+    --blue: #00cfff;
+    --pink: #FFD1DC;
+    --yellow-green: #D4E157;
+    --pale-green: #E0FFE0;
+    --grey: #808080;
+    --text: #8dffb0;
+    --text-dim: #3a7050;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    flex-shrink: 0;
+  }
+
+  header h1 {
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 1.3rem;
+    color: var(--green);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+
+  header .ver {
+    font-size: 0.6rem;
+    color: var(--green-dim);
+    margin-left: 10px;
+    border: 1px solid var(--green-dim);
+    padding: 1px 5px;
+    border-radius: 2px;
+  }
+
+  header span {
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+  }
+
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .canvas-wrap {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at center, #040d07 0%, #020705 100%);
+  }
+
+  canvas {
+    display: block;
+    border: 1px solid var(--border);
+    box-shadow: 0 0 40px var(--green-glow), inset 0 0 60px rgba(0,0,0,0.8);
+  }
+
+  .scanlines {
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(
+      to bottom, transparent 0px, transparent 2px,
+      rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px
+    );
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .panel {
+    width: 248px;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+
+  .panel-section {
+    border-bottom: 1px solid var(--border);
+    padding: 10px 13px;
+  }
+
+  .panel-section h2 {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.68rem;
+    letter-spacing: 3px;
+    color: var(--green-dim);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+  .stat-box {
+    background: #040c07;
+    border: 1px solid var(--border);
+    padding: 5px 7px;
+    border-radius: 2px;
+  }
+  .stat-box .label { font-size: 0.5rem; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; }
+  .stat-box .value { font-size: 1.0rem; color: var(--green); }
+  .stat-box .value.pink  { color: var(--pink); }
+  .stat-box .value.yg    { color: var(--yellow-green); }
+  .stat-box .value.grey  { color: var(--grey); }
+
+  .neuro-row { margin-bottom: 7px; }
+  .neuro-label { display: flex; justify-content: space-between; font-size: 0.58rem; color: var(--text-dim); margin-bottom: 2px; }
+  .neuro-bar { height: 3px; background: #0a1a0f; border-radius: 2px; overflow: hidden; }
+  .neuro-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
+  .fill-dopa { background: var(--green); box-shadow: 0 0 5px var(--green); }
+  .fill-sero { background: var(--blue);  box-shadow: 0 0 5px var(--blue); }
+  .fill-octo { background: var(--amber); box-shadow: 0 0 5px var(--amber); }
+
+  .state-list { display: flex; flex-direction: column; gap: 4px; }
+  .state-row { display: flex; align-items: center; gap: 7px; font-size: 0.6rem; }
+  .state-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .state-count { margin-left: auto; color: var(--green); }
+
+  .ctrl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+  button {
+    background: #040c07;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.58rem;
+    padding: 5px 3px;
+    cursor: pointer;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    transition: all 0.15s;
+    border-radius: 2px;
+  }
+  button:hover { border-color: var(--green); color: var(--green); box-shadow: 0 0 8px var(--green-glow); }
+  button.active { border-color: var(--green); color: var(--green); background: #0a1f0f; }
+
+  .slider-row { margin-bottom: 7px; }
+  .slider-row label { display: flex; justify-content: space-between; font-size: 0.56rem; color: var(--text-dim); margin-bottom: 2px; }
+  input[type=range] {
+    width: 100%; -webkit-appearance: none;
+    height: 3px; background: #0a1a0f; outline: none; border-radius: 2px;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 4px var(--green); cursor: pointer;
+  }
+
+  .log { font-size: 0.55rem; color: var(--text-dim); height: 80px; overflow-y: auto; line-height: 1.65; }
+  .log-entry { animation: fadein 0.3s; }
+  .log-entry.warn  { color: var(--amber); }
+  .log-entry.info  { color: var(--green-dim); }
+  .log-entry.mate  { color: var(--pink); }
+  .log-entry.birth { color: var(--yellow-green); }
+  @keyframes fadein { from { opacity:0 } to { opacity:1 } }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 5px; }
+  .leg-item { display: flex; align-items: center; gap: 4px; font-size: 0.52rem; color: var(--text-dim); }
+  .leg-swatch { width: 9px; height: 9px; border-radius: 50%; flex-shrink:0; }
+
+  footer {
+    padding: 4px 14px;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+    font-size: 0.52rem;
+    color: var(--text-dim);
+    display: flex; gap: 16px; flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+  footer span { color: var(--green-dim); }
+</style>
+</head>
+<body>
+
+<header>
+  <div style="display:flex;align-items:center">
+    <h1>NemaSim-2D</h1>
+    <span class="ver">v2.1</span>
+  </div>
+  <div style="text-align:right">
+    <div>C. elegans Lifecycle &amp; Reproduction</div>
+    <span>302 NEURONS · SEXUAL DIMORPHISM · MATING SYSTEM</span>
+  </div>
+</header>
+
+<div class="main">
+  <div class="canvas-wrap">
+    <canvas id="sim"></canvas>
+    <div class="scanlines"></div>
+  </div>
+
+  <div class="panel">
+
+    <div class="panel-section">
+      <h2>Population</h2>
+      <div class="stats-grid">
+        <div class="stat-box"><div class="label">Total</div><div class="value" id="s-total">0</div></div>
+        <div class="stat-box"><div class="label">Hermaphr.</div><div class="value" id="s-herm">0</div></div>
+        <div class="stat-box"><div class="label">Males</div><div class="value pink" id="s-male">0</div></div>
+        <div class="stat-box"><div class="label">Larvae</div><div class="value grey" id="s-larv">0</div></div>
+        <div class="stat-box"><div class="label">Eggs/laid</div><div class="value yg" id="s-eggs">0</div></div>
+        <div class="stat-box"><div class="label">Deaths</div><div class="value" style="color:#ff6060" id="s-dead">0</div></div>
+        <div class="stat-box"><div class="label">Tick</div><div class="value" id="s-tick">0</div></div>
+        <div class="stat-box"><div class="label">Food</div><div class="value" id="s-food">0</div></div>
+        <div class="stat-box"><div class="label">FPS</div><div class="value" id="s-fps">0</div></div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h2>Neuromodulators (avg)</h2>
+      <div class="neuro-row">
+        <div class="neuro-label"><span>Dopamine</span><span id="n-dopa">0.00</span></div>
+        <div class="neuro-bar"><div class="neuro-fill fill-dopa" id="b-dopa" style="width:0%"></div></div>
+      </div>
+      <div class="neuro-row">
+        <div class="neuro-label"><span>Serotonin</span><span id="n-sero">0.00</span></div>
+        <div class="neuro-bar"><div class="neuro-fill fill-sero" id="b-sero" style="width:0%"></div></div>
+      </div>
+      <div class="neuro-row">
+        <div class="neuro-label"><span>Octopamine</span><span id="n-octo">0.00</span></div>
+        <div class="neuro-bar"><div class="neuro-fill fill-octo" id="b-octo" style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h2>Behavioral States</h2>
+      <div class="state-list">
+        <div class="state-row"><div class="state-dot" style="background:#00ff6a"></div><span>Forward Run</span><span class="state-count" id="st-fwd">0</span></div>
+        <div class="state-row"><div class="state-dot" style="background:#ff3a3a"></div><span>Reversal</span><span class="state-count" id="st-rev">0</span></div>
+        <div class="state-row"><div class="state-dot" style="background:#ffb800"></div><span>Omega Turn</span><span class="state-count" id="st-omg">0</span></div>
+        <div class="state-row"><div class="state-dot" style="background:#00cfff"></div><span>Dwelling</span><span class="state-count" id="st-dwl">0</span></div>
+        <div class="state-row"><div class="state-dot" style="background:#FFD1DC"></div><span>Mating Dance</span><span class="state-count" id="st-mat">0</span></div>
+        <div class="state-row"><div class="state-dot" style="background:#D4E157"></div><span>Mate Seeking</span><span class="state-count" id="st-msk">0</span></div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h2>Controls</h2>
+      <div class="ctrl-grid">
+        <button id="btn-pause">⏸ Pause</button>
+        <button id="btn-reset">↺ Reset</button>
+        <button id="btn-food">+ Food</button>
+        <button id="btn-worm">+ Herm.</button>
+        <button id="btn-male">+ Male</button>
+        <button id="btn-pherom" class="active">Pheromones</button>
+      </div>
+      <br>
+      <div class="slider-row">
+        <label><span>Initial Worms</span><span id="lbl-worms">12</span></label>
+        <input type="range" id="sl-worms" min="2" max="40" value="12">
+      </div>
+      <div class="slider-row">
+        <label><span>Food Patches</span><span id="lbl-food">6</span></label>
+        <input type="range" id="sl-food" min="1" max="20" value="6">
+      </div>
+      <div class="slider-row">
+        <label><span>Sim Speed</span><span id="lbl-speed">1x</span></label>
+        <input type="range" id="sl-speed" min="1" max="5" value="1">
+      </div>
+      <div class="slider-row">
+        <label><span>Pop. Cap</span><span id="lbl-cap">60</span></label>
+        <input type="range" id="sl-cap" min="10" max="150" value="60">
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h2>Legend — Visual Dimorphism</h2>
+      <div class="legend">
+        <div class="leg-item"><div class="leg-swatch" style="background:#E0FFE0;border:1px solid #aaffaa"></div>Hermaphr. (Adult)</div>
+        <div class="leg-item"><div class="leg-swatch" style="background:#D4E157"></div>Seeking Mate (♀)</div>
+        <div class="leg-item"><div class="leg-swatch" style="background:#FFD1DC"></div>Male (XO)</div>
+        <div class="leg-item"><div class="leg-swatch" style="background:#808080"></div>Larva (L4)</div>
+        <div class="leg-item"><div class="leg-swatch" style="background:#ffffcc"></div>Elderly (>80%)</div>
+        <div class="leg-item"><div class="leg-swatch" style="background:#ffcccc"></div>Crowding stress</div>
+        <div class="leg-item"><div class="leg-swatch" style="background:#404040"></div>Dying (fading)</div>
+        <div class="leg-item"><div class="leg-swatch" style="background:#00ff6a22;border:1px solid #00ff6a33"></div>Food Patch</div>
+        <div class="leg-item"><div class="leg-swatch" style="background:#0f3318"></div>Pheromone</div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h2>Event Log</h2>
+      <div class="log" id="log"></div>
+    </div>
+
+  </div>
+</div>
+
+<footer>
+  <span>ASE</span> Chemotaxis &nbsp;|&nbsp;
+  <span>NSM</span> Food Sense &nbsp;|&nbsp;
+  <span>AVA</span> Backward &nbsp;|&nbsp;
+  <span>ascr#3</span> ♀ Pheromone &nbsp;|&nbsp;
+  <span>ascr#10</span> ♂ Pheromone &nbsp;|&nbsp;
+  <span>XX</span> Hermaphrodite &nbsp;|&nbsp;
+  <span>XO</span> Male
+</footer>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  NemaSim-2D  v2.1  —  C. elegans lifecycle + reproduction
+//  TDD spec: Sexual Dimorphism, Mating System, Pheromone Fields
+// ═══════════════════════════════════════════════════════════════
+
+const canvas = document.getElementById('sim');
+const ctx    = canvas.getContext('2d');
+const W = 700, H = 590;
+canvas.width = W; canvas.height = H;
+
+// ── GRID ──
+const CELL = 4;
+const COLS = Math.floor(W / CELL);
+const ROWS = Math.floor(H / CELL);
+
+// ── LIFECYCLE CONSTANTS ──
+const LARVA_TICKS      = 600;   // ticks to mature
+const SPERM_START      = 300;   // hermaphrodite self-sperm count
+const EGG_LAY_RATE     = 90;    // ticks between eggs (on food)
+const EGG_HATCH        = 400;   // ticks for egg to become larva
+const MATING_DIST      = 14;    // pixels for contact detection
+const MATING_TICKS     = 120;   // duration of sperm transfer
+const MAX_POP_DEFAULT  = 60;
+let   MAX_POP          = 60;
+let   totalEggsLaid    = 0;
+let   totalDeaths      = 0;
+
+// ── DEATH CONSTANTS ──
+const LIFESPAN_ADULT   = 2500;  // ticks as adult before natural death
+const LIFESPAN_JITTER  = 500;   // ± random variance in lifespan
+const STARVATION_DEATH = 1800;  // hunger ticks before starvation death
+const OVERCROWD_RADIUS = 20;    // pixel radius for neighbor counting
+const OVERCROWD_LIMIT  = 8;     // max neighbors before crowding stress
+const OVERCROWD_TICKS  = 600;   // ticks under overcrowding before death
+const NUTRIENT_RADIUS  = 16;    // food patch radius released on death
+
+// ── SEX COLORS (TDD 5.1) ──
+// Hermaphrodite adult: #E0FFE0  |  Sperm-depleted/seeking: #D4E157
+// Male: #FFD1DC  |  Larva: #808080
+const SEX_COLOR = {
+  HERM:    '#E0FFE0',
+  SEEKING: '#D4E157',
+  MALE:    '#FFD1DC',
+  LARVA:   '#A0A0A0',
+};
+
+// ══════════════════════════════════════════════════════
+//  ENVIRONMENT
+// ══════════════════════════════════════════════════════
+const env = {
+  pheromone:  new Float32Array(COLS * ROWS),  // general (aggregation)
+  ascr3:      new Float32Array(COLS * ROWS),  // hermaphrodite sex pheromone
+  ascr10:     new Float32Array(COLS * ROWS),  // male sex pheromone
+  food:       new Uint8Array(COLS * ROWS),
+  showPheromones: true,
+
+  idx(cx, cy) { return cy * COLS + cx; },
+  cellOf(wx, wy) { return { cx: Math.floor(wx/CELL), cy: Math.floor(wy/CELL) }; },
+
+  inBounds(cx, cy) { return cx>=0 && cx<COLS && cy>=0 && cy<ROWS; },
+
+  sampleGradient(wx, wy, layer) {
+    const {cx, cy} = this.cellOf(wx, wy);
+    const g = (dx, dy) => {
+      const x=cx+dx, y=cy+dy;
+      return this.inBounds(x,y) ? layer[this.idx(x,y)] : 0;
+    };
+    return (g(1,0)-g(-1,0) + g(0,1)-g(0,-1)) * 0.5;
+  },
+
+  checkFood(wx, wy) {
+    const {cx,cy} = this.cellOf(wx,wy);
+    return this.inBounds(cx,cy) && this.food[this.idx(cx,cy)] > 0;
+  },
+
+  consumeFood(wx, wy) {
+    const {cx,cy} = this.cellOf(wx,wy);
+    if (this.inBounds(cx,cy)) {
+      const i = this.idx(cx,cy);
+      if (this.food[i] > 0) { this.food[i] = 0; }
+    }
+  },
+
+  deposit(layer, wx, wy, amt) {
+    const {cx,cy} = this.cellOf(wx,wy);
+    if (this.inBounds(cx,cy)) {
+      const i = this.idx(cx,cy);
+      layer[i] = Math.min(1, layer[i] + amt);
+    }
+  },
+
+  _diffuseLayer(layer, decay=0.996) {
+    const next = new Float32Array(layer.length);
+    for (let y=1; y<ROWS-1; y++) for (let x=1; x<COLS-1; x++) {
+      const i = this.idx(x,y);
+      next[i] = ((layer[i]*4 + layer[i-1]+layer[i+1]+layer[i-COLS]+layer[i+COLS]) / 8) * decay;
+    }
+    return next;
+  },
+
+  diffuse() {
+    this.pheromone = this._diffuseLayer(this.pheromone, 0.995);
+    this.ascr3     = this._diffuseLayer(this.ascr3, 0.993);
+    this.ascr10    = this._diffuseLayer(this.ascr10, 0.993);
+  },
+
+  addFoodPatch(px, py, radius=20) {
+    for (let y=0; y<ROWS; y++) for (let x=0; x<COLS; x++) {
+      const dx=x*CELL-px, dy=y*CELL-py;
+      if (dx*dx+dy*dy < radius*radius) this.food[this.idx(x,y)] = 1;
+    }
+  },
+  clearFood() { this.food.fill(0); },
+  countFood()  { let n=0; for (let i=0; i<this.food.length; i++) if(this.food[i]) n++; return n; },
+};
+
+// ══════════════════════════════════════════════════════
+//  EGG CLASS
+// ══════════════════════════════════════════════════════
+class Egg {
+  constructor(x, y, spermType) {
+    this.x = x; this.y = y;
+    this.age = 0;
+    this.hatchTime = EGG_HATCH + Math.floor(Math.random()*100);
+    this.spermType = spermType; // 'self' or 'male'
+    this.hatched = false;
+  }
+  tick() { this.age++; }
+  get ready() { return this.age >= this.hatchTime; }
+  draw() {
+    const alpha = 0.4 + (this.age / this.hatchTime) * 0.5;
+    const r = 2 + (this.age / this.hatchTime) * 1.5;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.ellipse(this.x, this.y, r*1.5, r, 0, 0, Math.PI*2);
+    ctx.fillStyle = this.spermType === 'male' ? '#FFB0C0' : '#c8ffd4';
+    ctx.fill();
+    ctx.strokeStyle = this.spermType === 'male' ? '#ff8aa0' : '#80ff9f';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  NEMATODE CLASS
+// ══════════════════════════════════════════════════════
+const N_SEG = 12;
+const SPEED_BASE = 1.2;
+
+class Nematode {
+  constructor(x, y, sex='herm', isLarva=false) {
+    this.sex = sex;       // 'herm' | 'male'
+    this.isLarva = isLarva;
+    this.age = isLarva ? 0 : LARVA_TICKS; // mature worms start adult
+    this.sperm = (sex === 'herm' && !isLarva) ? SPERM_START : 0;
+    this.maleSpermBoost = 0; // bonus sperm from male mating
+    this.eggLayTimer = 0;
+    this.matingTimer = 0;
+    this.matingPartner = null;
+    this.dead = false;
+    this.dying = false;      // fading out before removal
+    this.dyingAlpha = 1.0;   // visual fade
+    this.social = true;
+
+    // Death timers
+    this.lifespan      = LIFESPAN_ADULT + Math.floor((Math.random()*2-1) * LIFESPAN_JITTER);
+    this.adultAge      = 0;  // ticks lived as adult
+    this.crowdStress   = 0;  // ticks spent in overcrowded condition
+    this.cause         = ''; // cause of death for log
+
+    // Physical body
+    this.segments = [];
+    for (let i=0; i<N_SEG; i++) this.segments.push({x: x - i*4, y});
+    this.angle = Math.random() * Math.PI * 2;
+
+    this.genes = {
+      turn_bias:  0.3 + Math.random()*0.4,
+      speed_base: 0.8 + Math.random()*0.5,
+    };
+
+    this.brain = {
+      state: 'FORWARD',
+      timers: { reversal: 0, omega: 0, hunger: 0 },
+      neuromodulators: { dopamine: 0, serotonin: 0, octopamine: 0 },
+    };
+
+    this.oscPhase   = Math.random()*Math.PI*2;
+    this.omegaPhase = 0;
+  }
+
+  get head() { return this.segments[0]; }
+  get tail() { return this.segments[N_SEG-1]; }
+  get isAdult() { return this.age >= LARVA_TICKS; }
+  get spermDepleted() { return this.sex==='herm' && this.isAdult && this.sperm <= 0 && this.maleSpermBoost <= 0; }
+  get totalFertility() { return this.sperm + this.maleSpermBoost; }
+
+  // Visual color per TDD §5.1 + death/aging cues
+  get bodyColor() {
+    if (this.isLarva || !this.isAdult) return SEX_COLOR.LARVA;
+    if (this.sex === 'male') return SEX_COLOR.MALE;
+    if (this.spermDepleted || this.brain.state === 'MATE_SEEK') return SEX_COLOR.SEEKING;
+    // Aging: fade toward yellow-white as lifespan runs out
+    const ageRatio = this.adultAge / this.lifespan;
+    if (ageRatio > 0.8) return '#ffffcc'; // elderly — pale yellow
+    // Overcrowding stress: shift toward reddish
+    if (this.crowdStress > OVERCROWD_TICKS * 0.5) return '#ffcccc';
+    return SEX_COLOR.HERM;
+  }
+
+  tick(tickN, allWorms, eggs) {
+    if (this.dead) return;
+    this.age++;
+
+    // Larval state — simplified random walk until adult
+    if (!this.isAdult) {
+      this._larvaTick();
+      return;
+    }
+
+    this.adultAge++;
+
+    // ── DEATH CHECKS ──
+    // 1. Natural lifespan
+    if (this.adultAge >= this.lifespan) {
+      this.die('old age');
+      return;
+    }
+
+    // 2. Starvation
+    if (this.brain.timers.hunger >= STARVATION_DEATH) {
+      this.die('starvation');
+      return;
+    }
+
+    // 3. Overcrowding — count nearby neighbors
+    let neighbors = 0;
+    for (const other of allWorms) {
+      if (other === this || other.dead) continue;
+      const dx = other.head.x - this.head.x;
+      const dy = other.head.y - this.head.y;
+      if (dx*dx + dy*dy < OVERCROWD_RADIUS*OVERCROWD_RADIUS) neighbors++;
+    }
+    if (neighbors >= OVERCROWD_LIMIT) {
+      this.crowdStress++;
+      if (this.crowdStress >= OVERCROWD_TICKS) {
+        this.die('overcrowding');
+        return;
+      }
+    } else {
+      this.crowdStress = Math.max(0, this.crowdStress - 2); // recover slowly
+    }
+
+    const nm  = this.brain.neuromodulators;
+    const tmr = this.brain.timers;
+
+    // ── SENSE ──
+    const onFood  = env.checkFood(this.head.x, this.head.y);
+    const nearWall = this.head.x<10||this.head.x>W-10||this.head.y<10||this.head.y>H-10;
+
+    // Sex-specific chemotaxis
+    const genGrad = env.sampleGradient(this.head.x, this.head.y, env.pheromone) * (this.social ? 1 : -1);
+    let sexGrad = 0;
+    if (this.sex === 'male') {
+      // Males track ascr#3 (hermaphrodite pheromone)
+      sexGrad = env.sampleGradient(this.head.x, this.head.y, env.ascr3);
+    } else if (this.spermDepleted) {
+      // Sperm-depleted hermaphrodites track ascr#10 (male pheromone)
+      sexGrad = env.sampleGradient(this.head.x, this.head.y, env.ascr10);
+    }
+
+    // ── NEUROMODULATORS ──
+    if (onFood) {
+      nm.dopamine   = Math.min(1, nm.dopamine   + 0.05);
+      nm.serotonin  = Math.min(1, nm.serotonin  + 0.01);
+      nm.octopamine = Math.max(0, nm.octopamine - 0.02);
+      tmr.hunger = 0;
+      // Food is NOT consumed every tick — patches persist, only depleted when eggs are laid
+    } else {
+      nm.dopamine   *= 0.97;
+      nm.serotonin  *= 0.99;
+      nm.octopamine = Math.min(1, nm.octopamine + 0.002);
+      tmr.hunger++;
+    }
+
+    // ── MATING LOGIC ──
+    if (this.matingTimer > 0) {
+      this.brain.state = 'MATING';
+      this.matingTimer--;
+      if (this.matingTimer === 0) {
+        this._completeMating();
+      }
+      this.moveBody(onFood);
+      this._emitPheromones();
+      return;
+    }
+
+    // Check for mate contact
+    if (this.sex === 'male' && this.isAdult) {
+      for (const other of allWorms) {
+        if (other === this || other.sex !== 'herm' || !other.isAdult || other.matingTimer > 0) continue;
+        const dx = this.tail.x - other.head.x;
+        const dy = this.tail.y - other.head.y;
+        if (dx*dx + dy*dy < MATING_DIST*MATING_DIST) {
+          // Initiate mating dance
+          this.matingTimer   = MATING_TICKS;
+          other.matingTimer  = MATING_TICKS;
+          this.matingPartner  = other;
+          other.matingPartner = this;
+          this.brain.state   = 'MATING';
+          other.brain.state  = 'MATING';
+          log(`♂ mating initiated at tick ${tickN}`, 'mate');
+        }
+      }
+    }
+
+    // ── STATE MACHINE ──
+    if (tmr.reversal > 0) {
+      this.brain.state = 'REVERSAL';
+      tmr.reversal--;
+      if (tmr.reversal === 0) { this.brain.state = 'OMEGA_TURN'; tmr.omega = 25; }
+    } else if (tmr.omega > 0) {
+      this.brain.state = 'OMEGA_TURN';
+      tmr.omega--;
+      if (tmr.omega === 0) this.brain.state = 'FORWARD';
+    } else if (nearWall) {
+      this.brain.state = 'REVERSAL';
+      tmr.reversal = 35 + Math.floor(Math.random()*25);
+    } else if (onFood && nm.dopamine > 0.4) {
+      this.brain.state = 'DWELL';
+    } else if (this.spermDepleted) {
+      this.brain.state = 'MATE_SEEK';
+      // Biased toward ascr#10 gradient
+      const pTurn = Math.max(0, this.genes.turn_bias * 0.012 - sexGrad * 0.01);
+      if (Math.random() < pTurn) { this.brain.state = 'OMEGA_TURN'; tmr.omega = 20+Math.floor(Math.random()*20); }
+    } else if (this.sex === 'male') {
+      this.brain.state = 'FORWARD';
+      const pTurn = Math.max(0, this.genes.turn_bias * 0.01 - sexGrad * 0.01);
+      if (Math.random() < pTurn) { this.brain.state = 'OMEGA_TURN'; tmr.omega = 20+Math.floor(Math.random()*20); }
+    } else {
+      this.brain.state = 'FORWARD';
+      const pTurn = Math.max(0, this.genes.turn_bias * 0.015 - genGrad * 0.008);
+      if (Math.random() < pTurn) { this.brain.state = 'OMEGA_TURN'; tmr.omega = 20+Math.floor(Math.random()*25); }
+    }
+
+    // ── EGG LAYING ──
+    // Bug fix: !nm.octopamine > 0.7 was always false due to operator precedence
+    if (this.sex === 'herm' && this.isAdult && onFood && nm.octopamine < 0.7) {
+      this.eggLayTimer++;
+      const rate = this.maleSpermBoost > 0 ? EGG_LAY_RATE * 0.5 : EGG_LAY_RATE;
+      if (this.eggLayTimer >= rate && this.totalFertility > 0) {
+        this._layEgg(eggs);
+        this.eggLayTimer = 0;
+      }
+    }
+
+    this.moveBody(onFood);
+    this._emitPheromones();
+  }
+
+  die(cause) {
+    if (this.dead) return;
+    this.dead   = true;
+    this.dying  = true;
+    this.cause  = cause;
+    // Release nutrients — body decomposes into food
+    env.addFoodPatch(this.head.x, this.head.y, NUTRIENT_RADIUS);
+    totalDeaths++;
+    log(`Worm died: ${cause}`, 'warn');
+  }
+
+  _larvaTick() {
+    // Simple random walk for larva
+    this.angle += (Math.random()-0.5) * 0.15;
+    const spd = 0.6;
+    const nx = Math.max(5, Math.min(W-5, this.head.x + Math.cos(this.angle)*spd));
+    const ny = Math.max(5, Math.min(H-5, this.head.y + Math.sin(this.angle)*spd));
+    for (let i=N_SEG-1; i>0; i--) {
+      this.segments[i].x = this.segments[i-1].x;
+      this.segments[i].y = this.segments[i-1].y;
+    }
+    this.segments[0].x = nx;
+    this.segments[0].y = ny;
+  }
+
+  _completeMating() {
+    if (this.sex === 'male' && this.matingPartner) {
+      // Transfer sperm — overwrites/boosts hermaphrodite sperm
+      const partner = this.matingPartner;
+      partner.maleSpermBoost = 1000;
+      partner.sperm = 0; // male sperm precedence
+      log(`Sperm transfer complete! +1000 fertility`, 'mate');
+    }
+    this.matingPartner = null;
+    this.brain.state = 'FORWARD';
+  }
+
+  _layEgg(eggs) {
+    if (this.totalFertility <= 0) return;
+    const ex = this.head.x + (Math.random()-0.5)*8;
+    const ey = this.head.y + (Math.random()-0.5)*8;
+    if (this.maleSpermBoost > 0) {
+      this.maleSpermBoost--;
+      eggs.push(new Egg(ex, ey, 'male'));
+    } else {
+      this.sperm--;
+      eggs.push(new Egg(ex, ey, 'self'));
+    }
+    totalEggsLaid++;
+    // Consume one food cell per egg laid — gradual, realistic depletion
+    env.consumeFood(this.head.x, this.head.y);
+    log(`Egg laid (sperm: ${this.totalFertility} remaining)`, 'birth');
+  }
+
+  _emitPheromones() {
+    env.deposit(env.pheromone, this.head.x, this.head.y, 0.003);
+    if (this.sex === 'herm' && this.isAdult) {
+      env.deposit(env.ascr3, this.head.x, this.head.y, 0.005);
+    } else if (this.sex === 'male') {
+      env.deposit(env.ascr10, this.head.x, this.head.y, 0.005);
+    }
+  }
+
+  moveBody(onFood) {
+    const st = this.brain.state;
+    const nm = this.brain.neuromodulators;
+
+    let freq = onFood ? 0.028 : 0.085;
+    let amp  = onFood ? 0.22  : 0.42;
+    freq *= this.genes.speed_base;
+
+    const speedMult = st==='DWELL'    ? 0.25
+                    : st==='REVERSAL' ? 0.55
+                    : st==='OMEGA_TURN' ? 0.18
+                    : st==='MATING'   ? 0.1
+                    : st==='MATE_SEEK' ? 1.3
+                    : 1.0 - nm.dopamine * 0.45;
+
+    // Males rove faster
+    const sexBoost = (this.sex === 'male') ? 1.2 : 1.0;
+    const larvaScale = this.isAdult ? 1.0 : 0.5;
+    const speed = SPEED_BASE * this.genes.speed_base * speedMult * sexBoost * larvaScale
+                  * (1 + nm.octopamine * 0.35);
+
+    this.oscPhase += freq;
+
+    if (st === 'OMEGA_TURN') {
+      this.omegaPhase += 0.11;
+      this.angle += Math.sin(this.omegaPhase) * 0.14;
+    } else {
+      this.angle += Math.sin(this.oscPhase) * amp * 0.08;
+    }
+
+    if (st === 'REVERSAL') this.angle += Math.PI;
+
+    const nx = this.head.x + Math.cos(this.angle) * speed;
+    const ny = this.head.y + Math.sin(this.angle) * speed;
+    const hx = Math.max(5, Math.min(W-5, nx));
+    const hy = Math.max(5, Math.min(H-5, ny));
+
+    for (let i=N_SEG-1; i>0; i--) {
+      this.segments[i].x = this.segments[i-1].x;
+      this.segments[i].y = this.segments[i-1].y;
+    }
+    this.segments[0].x = hx;
+    this.segments[0].y = hy;
+
+    if (st === 'REVERSAL') this.angle -= Math.PI;
+  }
+
+  draw() {
+    if (this.dead && !this.dying) return;
+
+    const color = this.dying ? '#404040' : this.bodyColor;
+    const nm    = this.brain.neuromodulators;
+    const st    = this.brain.state;
+    const scale = this.isAdult ? 1.0 : 0.55;
+
+    ctx.save();
+    if (this.dying) ctx.globalAlpha = this.dyingAlpha;
+
+    // Glow on food or mating (not while dying)
+    if (!this.dying && (nm.dopamine > 0.5 || st === 'MATING')) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur  = (st === 'MATING') ? 10 : 4 + nm.dopamine * 5;
+    }
+
+    const nSeg = this.isAdult ? N_SEG : Math.floor(N_SEG * 0.7);
+
+    // Body line
+    ctx.beginPath();
+    ctx.moveTo(this.segments[0].x, this.segments[0].y);
+    for (let i=1; i<nSeg; i++) ctx.lineTo(this.segments[i].x, this.segments[i].y);
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = this.isAdult ? (this.sex==='male' ? 2 : 2.2) : 1.2;
+    ctx.lineCap     = 'round';
+    ctx.lineJoin    = 'round';
+    ctx.globalAlpha = 0.88;
+    ctx.stroke();
+
+    // Tail visual dimorphism: fan shape for males
+    if (this.sex === 'male' && this.isAdult) {
+      const tail = this.segments[nSeg-1];
+      const prev = this.segments[nSeg-2];
+      const tailAngle = Math.atan2(tail.y-prev.y, tail.x-prev.x);
+      ctx.globalAlpha = 0.6;
+      ctx.beginPath();
+      ctx.moveTo(tail.x, tail.y);
+      for (let a=-0.6; a<=0.6; a+=0.2) {
+        ctx.lineTo(tail.x + Math.cos(tailAngle+a)*5*scale, tail.y + Math.sin(tailAngle+a)*5*scale);
+        ctx.moveTo(tail.x, tail.y);
+      }
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Head dot
+    ctx.beginPath();
+    ctx.arc(this.head.x, this.head.y, this.isAdult ? 2.5 : 1.5, 0, Math.PI*2);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 1;
+    ctx.fill();
+
+    // Mate-seeking pulse ring
+    if (st === 'MATE_SEEK' && Math.floor(tick/15) % 2 === 0) {
+      ctx.beginPath();
+      ctx.arc(this.head.x, this.head.y, 5, 0, Math.PI*2);
+      ctx.strokeStyle = '#D4E157';
+      ctx.lineWidth = 0.8;
+      ctx.globalAlpha = 0.5;
+      ctx.stroke();
+    }
+
+    // Mating glow ring
+    if (st === 'MATING') {
+      ctx.beginPath();
+      ctx.arc(this.head.x, this.head.y, 6, 0, Math.PI*2);
+      ctx.strokeStyle = '#FFD1DC';
+      ctx.lineWidth = 1.2;
+      ctx.globalAlpha = 0.7;
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  SIMULATION STATE
+// ══════════════════════════════════════════════════════
+let worms      = [];
+let eggs       = [];
+let paused     = false;
+let tick       = 0;
+let simSpeed   = 1;
+let showPheromones = true;
+let lastFPS    = 0, frameCount = 0, lastFpsTime = performance.now();
+
+function init(nWorms=12, nFood=6) {
+  worms = []; eggs = [];
+  totalEggsLaid = 0;
+  totalDeaths   = 0;
+  env.pheromone.fill(0); env.ascr3.fill(0); env.ascr10.fill(0);
+  env.clearFood();
+
+  for (let i=0; i<nFood; i++) {
+    env.addFoodPatch(60+Math.random()*(W-120), 60+Math.random()*(H-120), 18+Math.random()*14);
+  }
+
+  // ~3% males, rest hermaphrodites
+  for (let i=0; i<nWorms; i++) {
+    const sex = (Math.random() < 0.03) ? 'male' : 'herm';
+    worms.push(new Nematode(60+Math.random()*(W-120), 60+Math.random()*(H-120), sex, false));
+  }
+  // Ensure at least 1 male for mating
+  if (!worms.some(w=>w.sex==='male')) {
+    worms[0].sex = 'male'; worms[0].sperm = 0;
+  }
+
+  tick = 0;
+  log(`Init: ${worms.filter(w=>w.sex==='herm').length} hermaphrodites, ${worms.filter(w=>w.sex==='male').length} males`, 'info');
+}
+
+// ── RENDER ──
+function render() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#020705';
+  ctx.fillRect(0, 0, W, H);
+
+  if (showPheromones) {
+    const imgData = ctx.createImageData(W, H);
+    for (let cy=0; cy<ROWS; cy++) for (let cx=0; cx<COLS; cx++) {
+      const i = cy*COLS+cx;
+      const gp = env.pheromone[i];
+      const a3 = env.ascr3[i];
+      const a10= env.ascr10[i];
+      if (gp < 0.005 && a3 < 0.005 && a10 < 0.005) continue;
+      const gInt = Math.min(255, gp * 350);
+      const a3Int= Math.min(255, a3 * 500);
+      const a10Int=Math.min(255, a10* 500);
+      for (let dy=0; dy<CELL; dy++) for (let dx=0; dx<CELL; dx++) {
+        const px = ((cx*CELL+dx) + (cy*CELL+dy)*W) * 4;
+        imgData.data[px+0] = Math.floor(a10Int * 0.9);
+        imgData.data[px+1] = Math.floor(gInt   * 0.7 + a3Int * 0.5);
+        imgData.data[px+2] = Math.floor(a3Int  * 0.4);
+        imgData.data[px+3] = Math.floor(Math.max(gInt, a3Int, a10Int) * 0.5);
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+  }
+
+  // Food
+  for (let cy=0; cy<ROWS; cy++) for (let cx=0; cx<COLS; cx++) {
+    if (!env.food[cy*COLS+cx]) continue;
+    ctx.fillStyle = 'rgba(0,255,106,0.06)';
+    ctx.fillRect(cx*CELL, cy*CELL, CELL, CELL);
+  }
+  ctx.strokeStyle = 'rgba(0,255,106,0.18)';
+  ctx.lineWidth = 0.5;
+  for (let cy=1; cy<ROWS-1; cy++) for (let cx=1; cx<COLS-1; cx++) {
+    if (!env.food[cy*COLS+cx]) continue;
+    const i = cy*COLS+cx;
+    if (!env.food[i-1]||!env.food[i+1]||!env.food[i-COLS]||!env.food[i+COLS]) {
+      ctx.strokeRect(cx*CELL, cy*CELL, CELL, CELL);
+    }
+  }
+
+  // Eggs
+  for (const e of eggs) e.draw();
+
+  // Worms (larvae first, then adults on top)
+  const sorted = [...worms].sort((a,b) => (a.isAdult?1:0)-(b.isAdult?1:0));
+  for (const w of sorted) w.draw();
+}
+
+// ── UPDATE ──
+function update() {
+  if (paused) return;
+  for (let s=0; s<simSpeed; s++) {
+    // Tick worms
+    const newborn = [];
+    for (const w of worms) {
+      w.tick(tick, worms, eggs);
+      // Fade out dying worms
+      if (w.dying) {
+        w.dyingAlpha -= 0.015;
+        if (w.dyingAlpha <= 0) w.dying = false;
+      }
+    }
+
+    // Tick eggs — hatch larvae if under pop cap
+    for (const e of eggs) {
+      e.tick();
+      if (e.ready && !e.hatched && worms.length < MAX_POP) {
+        e.hatched = true;
+        const sex = (Math.random() < 0.04) ? 'male' : 'herm';
+        newborn.push(new Nematode(e.x, e.y, sex, true));
+        if (newborn.length <= 3 && tick % 200 === 0) log(`Larva hatched (${sex})`, 'birth');
+      }
+    }
+
+    worms.push(...newborn);
+
+    // Prune hatched eggs
+    for (let i=eggs.length-1; i>=0; i--) {
+      if (eggs[i].hatched || eggs[i].age > EGG_HATCH * 3) eggs.splice(i, 1);
+    }
+
+    // Remove fully faded dead worms
+    for (let i = worms.length-1; i >= 0; i--) {
+      if (worms[i].dead && !worms[i].dying) worms.splice(i, 1);
+    }
+
+    // Cap population (hard safety ceiling)
+    if (worms.length > MAX_POP) {
+      worms.splice(MAX_POP);
+    }
+
+    if (tick % 5 === 0) env.diffuse();
+
+    // Replenish food slowly
+    if (tick % 300 === 0 && env.countFood() < COLS*ROWS*0.03) {
+      env.addFoodPatch(60+Math.random()*(W-120), 60+Math.random()*(H-120), 14+Math.random()*10);
+    }
+
+    tick++;
+  }
+}
+
+// ── HUD ──
+function updateHUD() {
+  const herms  = worms.filter(w=>w.sex==='herm' && w.isAdult);
+  const males  = worms.filter(w=>w.sex==='male' && w.isAdult);
+  const larvae = worms.filter(w=>!w.isAdult);
+
+  document.getElementById('s-total').textContent = worms.length;
+  document.getElementById('s-herm').textContent  = herms.length;
+  document.getElementById('s-male').textContent  = males.length;
+  document.getElementById('s-larv').textContent  = larvae.length;
+  document.getElementById('s-eggs').textContent  = totalEggsLaid;
+  document.getElementById('s-dead').textContent  = totalDeaths;
+  document.getElementById('s-tick').textContent  = tick;
+  document.getElementById('s-food').textContent  = Math.floor(env.countFood()/10);
+
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 500) {
+    lastFPS = Math.round(frameCount*1000/(now-lastFpsTime));
+    frameCount = 0; lastFpsTime = now;
+    document.getElementById('s-fps').textContent = lastFPS;
+  }
+
+  if (worms.length === 0) return;
+  let da=0, se=0, oc=0;
+  let st = {FORWARD:0,REVERSAL:0,OMEGA_TURN:0,DWELL:0,MATING:0,MATE_SEEK:0};
+  for (const w of worms) {
+    const nm = w.brain.neuromodulators;
+    da += nm.dopamine; se += nm.serotonin; oc += nm.octopamine;
+    st[w.brain.state] = (st[w.brain.state]||0)+1;
+  }
+  const n = worms.length;
+  da/=n; se/=n; oc/=n;
+  const setN = (id,bid,v) => {
+    document.getElementById(id).textContent = v.toFixed(2);
+    document.getElementById(bid).style.width = (v*100).toFixed(1)+'%';
+  };
+  setN('n-dopa','b-dopa',da); setN('n-sero','b-sero',se); setN('n-octo','b-octo',oc);
+
+  document.getElementById('st-fwd').textContent = st.FORWARD||0;
+  document.getElementById('st-rev').textContent = st.REVERSAL||0;
+  document.getElementById('st-omg').textContent = st.OMEGA_TURN||0;
+  document.getElementById('st-dwl').textContent = st.DWELL||0;
+  document.getElementById('st-mat').textContent = st.MATING||0;
+  document.getElementById('st-msk').textContent = st.MATE_SEEK||0;
+}
+
+// ── LOG ──
+const logEl = document.getElementById('log');
+let logLines = 0;
+function log(msg, type='') {
+  logLines++;
+  if (logLines > 60) { logEl.innerHTML = ''; logLines = 0; }
+  const d = document.createElement('div');
+  d.className = 'log-entry ' + type;
+  d.textContent = `[${tick}] ${msg}`;
+  logEl.prepend(d);
+}
+
+// ── GAME LOOP ──
+function loop() {
+  update();
+  render();
+  updateHUD();
+  requestAnimationFrame(loop);
+}
+
+// ── CONTROLS ──
+document.getElementById('btn-pause').addEventListener('click', function() {
+  paused = !paused;
+  this.textContent = paused ? '▶ Resume' : '⏸ Pause';
+  this.classList.toggle('active', paused);
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  const nw = parseInt(document.getElementById('sl-worms').value);
+  const nf = parseInt(document.getElementById('sl-food').value);
+  init(nw, nf);
+});
+
+document.getElementById('btn-food').addEventListener('click', () => {
+  env.addFoodPatch(60+Math.random()*(W-120), 60+Math.random()*(H-120), 18+Math.random()*12);
+  log('Food patch added', 'info');
+});
+
+document.getElementById('btn-worm').addEventListener('click', () => {
+  worms.push(new Nematode(60+Math.random()*(W-120), 60+Math.random()*(H-120), 'herm', false));
+  log(`Hermaphrodite added`, 'info');
+});
+
+document.getElementById('btn-male').addEventListener('click', () => {
+  worms.push(new Nematode(60+Math.random()*(W-120), 60+Math.random()*(H-120), 'male', false));
+  log(`Male (XO) added`, 'mate');
+});
+
+document.getElementById('btn-pherom').addEventListener('click', function() {
+  showPheromones = !showPheromones;
+  this.classList.toggle('active', showPheromones);
+});
+
+document.getElementById('sl-worms').addEventListener('input', function() {
+  document.getElementById('lbl-worms').textContent = this.value;
+});
+document.getElementById('sl-food').addEventListener('input', function() {
+  document.getElementById('lbl-food').textContent = this.value;
+});
+document.getElementById('sl-speed').addEventListener('input', function() {
+  simSpeed = parseInt(this.value);
+  document.getElementById('lbl-speed').textContent = simSpeed + 'x';
+});
+document.getElementById('sl-cap').addEventListener('input', function() {
+  MAX_POP = parseInt(this.value);
+  document.getElementById('lbl-cap').textContent = this.value;
+});
+
+canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const sx = W/rect.width, sy = H/rect.height;
+  env.addFoodPatch((e.clientX-rect.left)*sx, (e.clientY-rect.top)*sy, 22);
+});
+
+// ── LAUNCH ──
+init(12, 6);
+loop();
+</script>
+</body>
+</html>
